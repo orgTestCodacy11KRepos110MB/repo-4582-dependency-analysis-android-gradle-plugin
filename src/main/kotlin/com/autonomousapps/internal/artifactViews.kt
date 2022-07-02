@@ -3,9 +3,12 @@ package com.autonomousapps.internal
 import org.gradle.api.artifacts.ArtifactCollection
 import org.gradle.api.artifacts.ArtifactView
 import org.gradle.api.artifacts.Configuration
+import org.gradle.api.artifacts.component.ComponentIdentifier
+import org.gradle.api.artifacts.component.ProjectComponentIdentifier
 import org.gradle.api.artifacts.result.ResolvedDependencyResult
 import org.gradle.api.attributes.Attribute
 import org.gradle.api.attributes.Category
+import org.gradle.api.specs.Spec
 
 /**
  * This is different than [org.gradle.api.attributes.Category.CATEGORY_ATTRIBUTE], which has type
@@ -15,11 +18,19 @@ internal val CATEGORY = Attribute.of("org.gradle.category", String::class.java)
 
 private val attributeKey = Attribute.of("artifactType", String::class.java)
 
-internal fun Configuration.artifactsFor(attrValue: String): ArtifactCollection = artifactViewFor(attrValue).artifacts
+internal fun Configuration.artifactsFor(
+  attrValue: String,
+  filter: Spec<ComponentIdentifier>? = null
+): ArtifactCollection = artifactViewFor(attrValue, filter).artifacts
 
-private fun Configuration.artifactViewFor(attrValue: String): ArtifactView = incoming.artifactView {
+private fun Configuration.artifactViewFor(
+  attrValue: String,
+  filter: Spec<ComponentIdentifier>? = null
+): ArtifactView = incoming.artifactView {
   attributes.attribute(attributeKey, attrValue)
   lenient(true)
+//  filter?.let { componentFilter(it) }
+  componentFilter { it is ProjectComponentIdentifier }
 }
 
 /**

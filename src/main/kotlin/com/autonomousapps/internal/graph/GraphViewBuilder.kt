@@ -6,6 +6,7 @@ import com.autonomousapps.internal.utils.rootCoordinates
 import com.autonomousapps.internal.utils.toCoordinates
 import com.autonomousapps.model.Coordinates
 import com.autonomousapps.model.DependencyGraphView
+import com.autonomousapps.model.ProjectCoordinates
 import com.google.common.graph.Graph
 import org.gradle.api.artifacts.Configuration
 import org.gradle.api.artifacts.FileCollectionDependency
@@ -49,7 +50,7 @@ internal class GraphViewBuilder(conf: Configuration) {
   }
 
   private fun walk(root: ResolvedComponentResult, rootId: Coordinates) {
-    root.dependencies
+    root.dependencies.asSequence()
       .filterIsInstance<ResolvedDependencyResult>()
       // AGP adds all runtime dependencies as constraints to the compile classpath, and these show
       // up in the resolution result. Filter them out.
@@ -58,6 +59,7 @@ internal class GraphViewBuilder(conf: Configuration) {
       .filterNot { it.isJavaPlatform() }
       // Sometimes there is a self-dependency?
       .filterNot { it.selected == root }
+      .filter { it.toCoordinates() is ProjectCoordinates }
       .forEach { dependencyResult ->
         // Might be from an included build, in which case the coordinates reflect the _requested_ dependency instead of
         // the _resolved_ dependency.

@@ -12,6 +12,7 @@ import com.autonomousapps.model.declaration.SourceSetKind
 import com.autonomousapps.model.declaration.Variant
 import org.gradle.api.DefaultTask
 import org.gradle.api.artifacts.Configuration
+import org.gradle.api.artifacts.component.ProjectComponentIdentifier
 import org.gradle.api.file.FileCollection
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.Property
@@ -50,7 +51,9 @@ abstract class GraphViewTask : DefaultTask() {
   @PathSensitive(PathSensitivity.NAME_ONLY)
   @InputFiles
   fun getCompileClasspath(): FileCollection = compileClasspath
-    .artifactsFor(jarAttr.get())
+    .artifactsFor(jarAttr.get()) {
+      it is ProjectComponentIdentifier
+    }
     .artifactFiles
 
   @PathSensitive(PathSensitivity.NAME_ONLY)
