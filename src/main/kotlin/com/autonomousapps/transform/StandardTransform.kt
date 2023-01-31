@@ -113,7 +113,9 @@ internal class StandardTransform(
     val usageIter = usages.iterator()
     while (usageIter.hasNext()) {
       val usage = usageIter.next()
-      val declarationsForVariant = declarations.filterToSet { it.variant(supportedSourceSets) == usage.variant }
+      val declarationsForVariant = declarations.filterToSet { declaration ->
+        declaration.variant(supportedSourceSets) == usage.variant
+      }
 
       // We have a declaration on the same variant as the usage. Remove or change it, if necessary.
       if (declarationsForVariant.isNotEmpty()) {
@@ -134,7 +136,7 @@ internal class StandardTransform(
               declaration = decl
             )
           } else if (
-          // Don't change a match, it's correct!
+            // Don't change a match, it's correct!
             !usage.bucket.matches(decl)
             // Don't change a declaration on compileOnly, compileOnlyApi, providedCompile
             && decl.bucket != Bucket.COMPILE_ONLY
@@ -171,6 +173,34 @@ internal class StandardTransform(
     }
 
     // Any remaining usages should be added
+//    usageIter = usages.iterator()
+//    while (usageIter.hasNext()) {
+//      val usage = usageIter.next()
+//      // Don't add unused usages!
+//      // Don't add runtimeOnly or compileOnly (compileOnly, compileOnlyApi, providedCompile) declarations
+//      if (usage.bucket != Bucket.NONE && usage.bucket != Bucket.RUNTIME_ONLY && usage.bucket != Bucket.COMPILE_ONLY) {
+//        usageIter.remove()
+//        advice += Advice.ofAdd(coordinates, usage.toConfiguration())
+//      }
+//    }
+
+    // TODO: useful comment
+    if (usages.size == 1 && declarations.size == 1) {
+      val lastUsage = usages.first()
+      if (lastUsage.bucket != Bucket.NONE) {
+        val lastDeclaration = declarations.first()
+        advice += Advice.ofChange(
+          coordinates = coordinates,
+          fromConfiguration = lastDeclaration.configurationName,
+          toConfiguration = lastUsage.toConfiguration(forceVariant = lastDeclaration.variant(supportedSourceSets))
+        )
+
+        // !!!early return!!!
+        return
+      }
+    }
+
+    // Any remaining usages should be added
     usages.asSequence()
       // Don't add unused usages!
       .filterUsed()
@@ -184,9 +214,19 @@ internal class StandardTransform(
     declarations.asSequence()
       // Don't remove runtimeOnly or compileOnly declarations
       .filterNot { it.bucket == Bucket.COMPILE_ONLY || it.bucket == Bucket.RUNTIME_ONLY }
-      .mapTo(advice) { decl ->
-        Advice.ofRemove(coordinates, decl)
+      .mapTo(advice) { declaration ->
+        Advice.ofRemove(coordinates, declaration)
       }
+
+    // If all declarations for this dependency were removed, and we have unaccounted for usages, we need to add a
+    // declaration back.
+//    if (numUsages == removals) {
+//      usages.asSequence()
+//        .filterUsed()
+//        .mapTo(advice) { usage ->
+//          Advice.ofAdd(coordinates, usage.toConfiguration())
+//        }
+//    }
   }
 
   /** Simply advice by transforming matching pairs of add-advice and remove-advice into a single change-advice. */
@@ -217,14 +257,16 @@ internal class StandardTransform(
   }
 
   /** e.g., "debug" + "implementation" -> "debugImplementation" */
-  private fun Usage.toConfiguration(): String {
+  private fun Usage.toConfiguration(forceVariant: Variant? = null): String {
     check(bucket != Bucket.NONE) { "You cannot 'declare' an unused dependency" }
 
     fun processor() = if (isKaptApplied) "kapt" else "annotationProcessor"
 
+    val theVariant = forceVariant ?: variant
+
     if (bucket == Bucket.ANNOTATION_PROCESSOR) {
       val original = processor()
-      return if (variant.variant == Variant.MAIN_NAME) {
+      return if (theVariant.variant == Variant.MAIN_NAME) {
         // "main" + "annotationProcessor" -> "annotationProcessor"
         // "main" + "kapt" -> "kapt"
         if ("annotationProcessor" in original) {
@@ -238,22 +280,22 @@ internal class StandardTransform(
         // "debug" + "annotationProcessor" -> "debugAnnotationProcessor"
         // "test" + "kapt" -> "kaptTest"
         if ("annotationProcessor" in original) {
-          "${configurationNamePrefix()}AnnotationProcessor"
+          "${theVariant.configurationNamePrefix()}AnnotationProcessor"
         } else if ("kapt" in original) {
-          "kapt${configurationNameSuffix()}"
+          "kapt${theVariant.configurationNameSuffix()}"
         } else {
           throw IllegalArgumentException("Unknown annotation processor: $original")
         }
       }
     }
 
-    return if (variant.variant == Variant.MAIN_NAME) {
+    return if (theVariant.variant == Variant.MAIN_NAME) {
       // "main" + "api" -> "api"
       bucket.value
     } else {
       // "debug" + "implementation" -> "debugImplementation"
       // "test" + "implementation" -> "testImplementation"
-      "${configurationNamePrefix()}${bucket.value.capitalizeSafely()}"
+      "${theVariant.configurationNamePrefix()}${bucket.value.capitalizeSafely()}"
     }
   }
 }
@@ -274,15 +316,15 @@ private fun isSingleBucket(usages: Set<Usage>): Boolean {
   else usages.mapToSet { it.bucket }.size == 1
 }
 
-private fun Usage.configurationNamePrefix(): String = when (variant.kind) {
-  SourceSetKind.MAIN -> variant.variant
+private fun Variant.configurationNamePrefix(): String = when (kind) {
+  SourceSetKind.MAIN -> variant
   SourceSetKind.TEST -> "test"
   SourceSetKind.ANDROID_TEST -> "androidTest"
 }
 
 @OptIn(ExperimentalStdlibApi::class)
-private fun Usage.configurationNameSuffix(): String = when (variant.kind) {
-  SourceSetKind.MAIN -> variant.variant.replaceFirstChar(Char::uppercase)
+private fun Variant.configurationNameSuffix(): String = when (kind) {
+  SourceSetKind.MAIN -> variant.replaceFirstChar(Char::uppercase)
   SourceSetKind.TEST -> "Test"
   SourceSetKind.ANDROID_TEST -> "AndroidTest"
 }
